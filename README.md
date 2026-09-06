@@ -1,4 +1,4 @@
-# Prompt Vault v3.3 — Persistent Google Drive Sync + Mobile Menu
+# Prompt Vault v3.3.1 — Persistent Google Drive Sync + Mobile Menu
 
 Prompt Vault is a local-first prompt library that works on phone and laptop and optionally synchronizes its data through your private Google Drive **App Data** area.
 
@@ -51,13 +51,20 @@ The bottom navigation provides:
 **More** includes all Drive and backup controls.
 
 
-## v3.3
+## v3.3.1
 - Added **Export to Excel** on desktop and mobile.
 - Exports prompts as `prompt-vault-prompts.xlsx` with Title, Category, Tags, Prompt, and Favorite columns.
 
 
-## v3.3
+## v3.3.1
 - Rename categories with ✎.
 - Set a parent category to create subcategories.
 - Drag prompt cards onto categories on desktop/laptop to move them.
 - On phones: Edit prompt → Category → Save to move it reliably.
+
+## v3.3.1 fixes
+- Fixed the Manage Category window so it opens as a proper centered modal instead of appearing permanently at the bottom of the page.
+- Fixed desktop drag-and-drop initialization after prompt cards render.
+- New Category now includes an optional Parent Category selector, so subcategories can be created directly.
+- Parent choices are limited to main categories to keep the hierarchy to one subcategory level.
+- Added a visible v3.3.1 marker in the sidebar footer for deployment verification.

@@ -1,44 +1,51 @@
-# Prompt Vault v2 — Google Drive Sync
+# Prompt Vault v3.1 — Persistent Google Drive Sync + Mobile Menu
 
-Prompt Vault is a local-first prompt library for phone and laptop. It works offline and can optionally synchronize its data through your own Google Drive account.
+Prompt Vault is a local-first prompt library that works on phone and laptop and optionally synchronizes its data through your private Google Drive **App Data** area.
 
-## What’s new in v2
+## What changed in v3.1
 
-- Google Drive App Data sync
-- Local-first/offline operation
-- Automatic or manual synchronization
-- Merge protection for edits made on multiple devices
-- Deletion tombstones to prevent deleted prompts from reappearing after sync
-- Visible sync status and Sync Now control
-- Existing categories, tags, favorites, search, prompt variables, one-click copy, backup/import
+- Google Drive connection now survives a normal page refresh by preserving the active OAuth session for the browser tab/session.
+- When a saved Google configuration exists but the session is no longer active, Prompt Vault attempts a quiet reconnect. If Google requires interaction, the app simply asks you to tap **Connect** again.
+- Mobile no longer requires **Desktop site**. The bottom navigation now includes **Categories** and **More**.
+- The **More** panel exposes Google Drive connection/status, Sync now, Drive settings, Export backup, and Import backup.
+- Exact duplicate prompts are automatically collapsed during load/sync (same title, category, prompt text, and tags), helping clean up the duplicate sample prompt created during the initial multi-device setup.
+- The service worker is now network-first when online, so GitHub Pages updates are picked up instead of being indefinitely hidden by an old cached copy.
 
-## Important: Google sign-in requires the app to be hosted
+## Google Drive setup
 
-Google OAuth does not work reliably from a `file://` address. To use Drive sync, host the `prompt-vault` folder on an HTTPS address. GitHub Pages, Netlify, Cloudflare Pages, Firebase Hosting, or any normal HTTPS web host will work.
+Use the existing Google Cloud OAuth Web Client you already created. The required scope remains:
 
-## One-time Google Cloud setup
+`https://www.googleapis.com/auth/drive.appdata`
 
-1. Open Google Cloud Console and create/select a project.
-2. Enable **Google Drive API**.
-3. Configure the OAuth consent screen. For a personal app, add your Google account as a test user if the app is still in Testing status.
-4. Create **OAuth Client ID → Web application**.
-5. Under **Authorized JavaScript origins**, add the exact HTTPS origin where Prompt Vault is hosted, e.g. `https://yourname.github.io`.
-6. Copy the generated Client ID. It ends in `.apps.googleusercontent.com`.
-7. Open Prompt Vault → **Google Drive settings** → paste the Client ID → **Save & Connect**.
-8. Approve the requested Google Drive permission.
+Your GitHub Pages origin should remain authorized, for example:
 
-Prompt Vault requests only the `drive.appdata` scope. This lets it read/write files created inside its private application-data area. It does not request access to your normal Google Drive documents.
+`https://pmugur68.github.io`
 
-## Cross-device use
+No Client Secret is used or required by Prompt Vault.
 
-Use the same hosted Prompt Vault URL and the same Google account on your phone and laptop. Enter the same OAuth Client ID once on each device and connect. The local library remains available offline and syncs when online.
+## Updating GitHub Pages
 
-## Files
+Upload/replace these files at the root of your GitHub repository:
 
-- `index.html` — app
-- `manifest.webmanifest` — installable PWA metadata
-- `sw.js` — offline service worker
+- `index.html`
+- `manifest.webmanifest`
+- `sw.js`
+- `README.md`
 
-## Backup
+Commit the changes to `main`. GitHub Pages should redeploy automatically.
 
-Even with Drive sync, Prompt Vault keeps the manual JSON Export/Import feature. Keeping occasional exports is recommended for important prompt libraries.
+Because this release changes the service worker, the first visit after deployment may need one extra refresh. After the new service worker activates, later updates should appear normally.
+
+## Mobile usage
+
+Use the normal mobile site — **Desktop site should be OFF**.
+
+The bottom navigation provides:
+
+- All
+- Favorites
+- Add
+- Categories
+- More
+
+**More** includes all Drive and backup controls.

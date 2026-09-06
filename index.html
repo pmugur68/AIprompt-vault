@@ -34,6 +34,12 @@
     .cat-tree-icon{display:inline-block;width:18px;text-align:center;flex:0 0 18px;font-size:13px;user-select:none}.cat-label{flex:1;text-align:left}.cat-row .side-btn{display:flex;align-items:center}.cat-row .cat-tools{display:flex;gap:4px}.cat-tool{border:0;background:transparent;color:#9ca3af;cursor:pointer;padding:5px;border-radius:6px}
     .cat-tool:hover{background:rgba(255,255,255,.08);color:inherit}.subcat-btn{margin-left:18px!important;width:calc(100% - 18px)!important}
     .card[draggable="true"]{cursor:grab}.card.dragging{opacity:.45}[data-cat].drop-target,[data-mobile-cat].drop-target{outline:2px dashed currentColor;outline-offset:-2px}
+
+    .clickable-chevron{cursor:pointer;border-radius:5px}.clickable-chevron:hover{background:rgba(255,255,255,.14)}
+    .category-drop-zone.dragging-category{opacity:.45}
+    .category-drop-target{outline:2px dashed #60a5fa!important;outline-offset:-2px;background:rgba(59,130,246,.12)!important}
+    .main-category-drop{display:none;margin:2px 8px 6px;padding:8px;border:1px dashed #4b5563;border-radius:8px;color:#9ca3af;font-size:11px;text-align:center}
+    aside:has(.dragging-category) .main-category-drop{display:block}
 </style>
 </head>
 <body>
@@ -52,7 +58,7 @@
     <button id="excelBtn" class="side-btn">▦ Export to Excel</button>
     <button id="importBtn" class="side-btn">⇧ Import backup</button>
     <input type="file" id="importFile" accept="application/json" hidden />
-    <div class="mini">Prompt Vault v3.3.4 • Local-first. Google Drive sync is optional.</div>
+    <div class="mini">Prompt Vault v3.3.5 • Local-first. Google Drive sync is optional.</div>
   </aside>
 
   <main>
@@ -161,6 +167,7 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show'
 function filtered(){const q=$('#search').value.trim().toLowerCase();return state.prompts.filter(p=>{if(currentView==='favorites'&&!p.favorite)return false;if(currentCategory&&p.category!==currentCategory)return false;const hay=[p.title,p.category,p.text,...(p.tags||[])].join(' ').toLowerCase();return !q||hay.includes(q)}).sort((a,b)=>(b.favorite-a.favorite)||(b.updatedAt-a.updatedAt));}
 
 
+
 function categoryDepth(cat){return (state.categoryParents||{})[cat]?1:0}
 function categoryChildren(parent){
   state.categoryParents=state.categoryParents||{};
@@ -172,73 +179,88 @@ function toggleCategoryCollapse(cat){
   localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
   renderCats();
 }
+function moveCategoryUnder(child,parent){
+  if(!child || child===parent)return;
+  state.categoryParents=state.categoryParents||{};
+  // one level only: a child cannot itself remain a parent
+  const childKids=categoryChildren(child);
+  if(parent && (state.categoryParents[parent] || childKids.includes(parent))){
+    toast('Drop onto a main category');
+    return;
+  }
+  if(parent) state.categoryParents[child]=parent;
+  else delete state.categoryParents[child];
+  markChanged();
+  persist();
+  toast(parent?child+' moved under '+parent:child+' moved to main categories');
+}
 function renderCats(){
-  const c=$('#categories');
-  if(!c)return;
+  const c=$('#categories'); if(!c)return;
   c.innerHTML='';
   state.categoryParents=state.categoryParents||{};
   state.collapsedCategories=state.collapsedCategories||{};
-
-  const roots=state.categories
-    .filter(cat=>{
-      const parent=state.categoryParents[cat];
-      return !parent || !state.categories.includes(parent);
-    })
-    .sort((a,b)=>a.localeCompare(b));
-
+  const roots=state.categories.filter(cat=>{
+    const parent=state.categoryParents[cat];
+    return !parent || !state.categories.includes(parent);
+  }).sort((a,b)=>a.localeCompare(b));
   const rendered=new Set();
 
   function addRow(cat,isChild=false){
-    if(rendered.has(cat))return;
-    rendered.add(cat);
-
+    if(rendered.has(cat))return; rendered.add(cat);
     const count=state.prompts.filter(p=>p.category===cat).length;
     const children=categoryChildren(cat);
     const hasChildren=!isChild && children.length>0;
     const collapsed=!!state.collapsedCategories[cat];
     const row=document.createElement('div');
-    row.className='cat-row';
+    row.className='cat-row category-drop-zone';
+    row.dataset.categoryRow=cat;
+    row.draggable=true;
 
     const icon=isChild?'↳':(hasChildren?(collapsed?'▸':'▾'):'•');
-    row.innerHTML=`<button class="side-btn ${isChild?'subcat-btn':''} ${currentCategory===cat?'active':''}" data-cat="${esc(cat)}">
-      <span class="cat-tree-icon">${icon}</span>
-      <span class="cat-label">${esc(cat)}</span>
-      <span class="cat-count">${count}</span>
+    row.innerHTML=`<button type="button" class="side-btn ${isChild?'subcat-btn':''} ${currentCategory===cat?'active':''}" data-cat="${esc(cat)}">
+      <span class="cat-tree-icon" title="${hasChildren?(collapsed?'Expand':'Collapse'):''}">${icon}</span>
+      <span class="cat-label">${esc(cat)}</span><span class="cat-count">${count}</span>
     </button>
-    <span class="cat-tools"><button class="cat-tool" data-manage-cat="${esc(cat)}" title="Rename / set parent">✎</button></span>`;
+    <span class="cat-tools"><button type="button" class="cat-tool" data-manage-cat="${esc(cat)}" title="Rename / set parent">✎</button></span>`;
 
     const btn=row.querySelector('[data-cat]');
     const iconEl=row.querySelector('.cat-tree-icon');
 
     if(hasChildren){
-      iconEl.style.cursor='pointer';
-      iconEl.title=collapsed?'Expand':'Collapse';
-      iconEl.onclick=(e)=>{e.stopPropagation();toggleCategoryCollapse(cat)};
+      iconEl.classList.add('clickable-chevron');
+      iconEl.onclick=e=>{e.preventDefault();e.stopPropagation();toggleCategoryCollapse(cat)};
     }
-
-    btn.onclick=()=>{
-      currentView='all';
-      currentCategory=cat;
-      render();
+    btn.onclick=e=>{
+      if(e.target===iconEl && hasChildren)return;
+      currentView='all';currentCategory=cat;render();
     };
+    row.querySelector('[data-manage-cat]').onclick=e=>{e.preventDefault();e.stopPropagation();openManageCategory(cat)};
 
-    row.querySelector('[data-manage-cat]').onclick=(e)=>{
-      e.stopPropagation();
-      openManageCategory(cat);
+    // Category drag/drop: drag a category row and drop it onto a MAIN category.
+    row.ondragstart=e=>{
+      if(e.target.closest && e.target.closest('[data-manage-cat]')){e.preventDefault();return}
+      e.dataTransfer.effectAllowed='move';
+      e.dataTransfer.setData('text/category-name',cat);
+      row.classList.add('dragging-category');
+    };
+    row.ondragend=()=>row.classList.remove('dragging-category');
+    row.ondragover=e=>{
+      const dragged=e.dataTransfer.types.includes('text/category-name');
+      if(dragged && !isChild){e.preventDefault();e.dataTransfer.dropEffect='move';row.classList.add('category-drop-target')}
+    };
+    row.ondragleave=()=>row.classList.remove('category-drop-target');
+    row.ondrop=e=>{
+      row.classList.remove('category-drop-target');
+      const child=e.dataTransfer.getData('text/category-name');
+      if(child && !isChild){e.preventDefault();e.stopPropagation();moveCategoryUnder(child,cat)}
     };
 
     c.appendChild(row);
-
-    if(hasChildren && !collapsed){
-      children.forEach(child=>addRow(child,true));
-    }
+    if(hasChildren&&!collapsed)children.forEach(child=>addRow(child,true));
   }
 
   roots.forEach(root=>addRow(root,false));
-
-  // Always show malformed/orphaned categories rather than hiding them.
   state.categories.filter(cat=>!rendered.has(cat)).sort((a,b)=>a.localeCompare(b)).forEach(cat=>addRow(cat,false));
-
   enablePromptDragDrop();
 }
 function render(){renderCats();const items=filtered();let title=currentCategory?currentCategory:(currentView==='favorites'?'Favorites':'All Prompts');$('#viewTitle').textContent=title;$('#summary').textContent=`${items.length} prompt${items.length===1?'':'s'} • ${state.categories.length} categories`;$$('.side-btn[data-view]').forEach(b=>b.classList.toggle('active',!currentCategory&&b.dataset.view===currentView));const g=$('#grid');if(!items.length){g.innerHTML='<div class="empty">No prompts found. Add one or try a different search.</div>';return}g.innerHTML=items.map(p=>`<article class="card" draggable="true" data-prompt-id="${p.id}"><div class="card-top"><div class="title">${esc(p.title)}</div><button class="star ${p.favorite?'on':''}" data-star="${p.id}">★</button></div><div class="meta"><span class="pill">${esc(p.category||'Uncategorized')}</span>${(p.tags||[]).map(t=>`<span class="pill tag">${esc(t)}</span>`).join('')}</div><div class="prompt">${esc(p.text)}</div><div class="card-actions"><button data-edit="${p.id}">Edit</button><button class="copy" data-copy="${p.id}">Copy</button></div></article>`).join('');$$('[data-star]').forEach(b=>b.onclick=()=>{const p=state.prompts.find(x=>x.id===b.dataset.star);p.favorite=!p.favorite;p.updatedAt=now();markChanged();persist()});$$('[data-edit]').forEach(b=>b.onclick=()=>openPrompt(b.dataset.edit));$$('[data-copy]').forEach(b=>b.onclick=()=>copyPrompt(b.dataset.copy));enablePromptDragDrop();}
@@ -254,7 +276,7 @@ function resolvedCopy(){let t=pendingCopyText;$$('[data-var]').forEach(i=>{const
 
 let managingCategory=null;
 function openManageCategory(cat){managingCategory=cat;state.categoryParents=state.categoryParents||{};$('#renameCategoryInput').value=cat;const sel=$('#parentCategorySelect');const mainCats=state.categories.filter(c=>c!==cat&&!state.categoryParents[c]);sel.innerHTML='<option value="">None — main category</option>'+mainCats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');sel.value=state.categoryParents[cat]||'';$('#manageCategoryModal').classList.add('show')}
-function saveManageCategory(){if(!managingCategory)return;const old=managingCategory,n=$('#renameCategoryInput').value.trim(),parent=$('#parentCategorySelect').value;if(!n)return;if(n!==old&&state.categories.some(c=>c.toLowerCase()===n.toLowerCase())){toast('Category already exists');return}state.categoryParents=state.categoryParents||{};if(n!==old){state.categories=state.categories.map(c=>c===old?n:c);state.prompts.forEach(p=>{if(p.category===old)p.category=n});const op=state.categoryParents[old];delete state.categoryParents[old];if(op)state.categoryParents[n]=op;Object.keys(state.categoryParents).forEach(k=>{if(state.categoryParents[k]===old)state.categoryParents[k]=n});if(currentCategory===old)currentCategory=n}if(parent&&parent!==n)state.categoryParents[n]=parent;else delete state.categoryParents[n];markChanged();$('#manageCategoryModal').classList.remove('show');persist();toast('Category updated')}
+function saveManageCategory(){if(!managingCategory)return;const old=managingCategory,n=$('#renameCategoryInput').value.trim(),parent=$('#parentCategorySelect').value;if(!n)return;if(n!==old&&state.categories.some(c=>c!==old&&c.toLowerCase()===n.toLowerCase())){toast('Category already exists');return}state.categoryParents=state.categoryParents||{};if(n!==old){state.categories=state.categories.map(c=>c===old?n:c);state.prompts.forEach(p=>{if(p.category===old)p.category=n});const op=state.categoryParents[old];delete state.categoryParents[old];if(op)state.categoryParents[n]=op;Object.keys(state.categoryParents).forEach(k=>{if(state.categoryParents[k]===old)state.categoryParents[k]=n});if(currentCategory===old)currentCategory=n}if(parent&&parent!==n)state.categoryParents[n]=parent;else delete state.categoryParents[n];markChanged();$('#manageCategoryModal').classList.remove('show');persist();toast('Category updated')}
 function enablePromptDragDrop(){$$('.card[data-prompt-id]').forEach(card=>{card.ondragstart=e=>{card.classList.add('dragging');e.dataTransfer.setData('text/prompt-id',card.dataset.promptId)};card.ondragend=()=>card.classList.remove('dragging')});$$('[data-cat],[data-mobile-cat]').forEach(el=>{const cat=el.dataset.cat||el.dataset.mobileCat;if(!cat)return;el.ondragover=e=>{e.preventDefault();el.classList.add('drop-target')};el.ondragleave=()=>el.classList.remove('drop-target');el.ondrop=e=>{e.preventDefault();el.classList.remove('drop-target');const id=e.dataTransfer.getData('text/prompt-id'),p=state.prompts.find(x=>x.id===id);if(p&&p.category!==cat){p.category=cat;p.updatedAt=now();markChanged();persist();toast('Prompt moved to '+cat)}}})}
 
 function newCategory(){$('#categoryName').value='';state.categoryParents=state.categoryParents||{};const sel=$('#newCategoryParent');sel.innerHTML='<option value="">None — main category</option>'+state.categories.filter(c=>!state.categoryParents[c]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');sel.value='';$('#categoryModal').classList.add('show');setTimeout(()=>$('#categoryName').focus(),30)}
@@ -405,7 +427,7 @@ $('#search').oninput=render;$('#newPromptTop').onclick=()=>openPrompt();$('#mobi
 $('#driveSettings').onclick=openDriveSettings;$('#driveSignIn').onclick=()=>drive.connected?syncDrive(true):connectDrive();$('#syncNow').onclick=()=>syncDrive(true);$('#cancelDrive').onclick=()=>$('#driveModal').classList.remove('show');$('#saveDriveSettings').onclick=saveDriveSettings;$('#disconnectDrive').onclick=disconnectDrive;
 window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#search').focus()}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openPrompt()}});
 load();render();updateSyncUI();restoreDriveConnection();
-if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.3.4',{updateViaCache:'none'});await reg.update()}catch(e){}});
+if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.3.5',{updateViaCache:'none'});await reg.update()}catch(e){}});
 </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# Prompt Vault v3.1 — Persistent Google Drive Sync + Mobile Menu
+# Prompt Vault v3.2 — Persistent Google Drive Sync + Mobile Menu
 
 Prompt Vault is a local-first prompt library that works on phone and laptop and optionally synchronizes its data through your private Google Drive **App Data** area.
 
@@ -49,3 +49,8 @@ The bottom navigation provides:
 - More
 
 **More** includes all Drive and backup controls.
+
+
+## v3.2
+- Added **Export to Excel** on desktop and mobile.
+- Exports prompts as `prompt-vault-prompts.xlsx` with Title, Category, Tags, Prompt, and Favorite columns.

@@ -44,6 +44,7 @@
     <div class="syncbox"><div id="syncStatusSide" class="syncstatus">Google Drive: not connected</div><div class="sync-actions"><button id="driveSignIn">Connect</button><button id="syncNow" style="display:none">Sync now</button></div></div>
     <button id="driveSettings" class="side-btn">⚙ Google Drive settings</button>
     <button id="exportBtn" class="side-btn">⇩ Export backup</button>
+    <button id="excelBtn" class="side-btn">▦ Export to Excel</button>
     <button id="importBtn" class="side-btn">⇧ Import backup</button>
     <input type="file" id="importFile" accept="application/json" hidden />
     <div class="mini">Local-first. Google Drive sync is optional.</div>
@@ -77,7 +78,7 @@
     <div id="mobileMoreSection" class="sheet-section">
       <div class="sheet-label">GOOGLE DRIVE</div>
       <div class="sheet-status"><div><div id="mobileDriveStatus" style="font-weight:750">Not connected</div><div class="hint">Private App Data sync</div></div><span id="mobileDriveDot" class="dot"></span></div>
-      <div class="sheet-grid" style="margin-top:8px"><button id="mobileConnectDrive" class="sheet-action primary-lite">Connect</button><button id="mobileSyncNow" class="sheet-action">Sync now</button><button id="mobileDriveSettings" class="sheet-action">⚙ Drive settings</button><button id="mobileExport" class="sheet-action">⇩ Export backup</button><button id="mobileImport" class="sheet-action">⇧ Import backup</button><button id="mobileCloseSheetAction" class="sheet-action">Close</button></div>
+      <div class="sheet-grid" style="margin-top:8px"><button id="mobileConnectDrive" class="sheet-action primary-lite">Connect</button><button id="mobileSyncNow" class="sheet-action">Sync now</button><button id="mobileDriveSettings" class="sheet-action">⚙ Drive settings</button><button id="mobileExport" class="sheet-action">⇩ Export backup</button><button id="mobileExcel" class="sheet-action">▦ Export to Excel</button><button id="mobileImport" class="sheet-action">⇧ Import backup</button><button id="mobileCloseSheetAction" class="sheet-action">Close</button></div>
     </div>
   </div>
 </div>
@@ -155,6 +156,46 @@ function resolvedCopy(){let t=pendingCopyText;$$('[data-var]').forEach(i=>{const
 function newCategory(){$('#categoryName').value='';$('#categoryModal').classList.add('show');setTimeout(()=>$('#categoryName').focus(),30)}
 function saveCategory(){const n=$('#categoryName').value.trim();if(!n)return;if(state.categories.some(c=>c.toLowerCase()===n.toLowerCase())){toast('Category already exists');return}state.categories.push(n);markChanged();$('#categoryModal').classList.remove('show');persist();toast('Category created')}
 function exportData(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='prompt-vault-backup.json';a.click();URL.revokeObjectURL(a.href);toast('Backup exported')}
+
+function xmlEsc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function crc32(bytes){let c=0xffffffff;for(const b of bytes){c^=b;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0)}return (c^0xffffffff)>>>0}
+function u16(n){return new Uint8Array([n&255,(n>>>8)&255])}
+function u32(n){return new Uint8Array([n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255])}
+function joinBytes(parts){let n=parts.reduce((a,b)=>a+b.length,0),o=new Uint8Array(n),p=0;for(const b of parts){o.set(b,p);p+=b.length}return o}
+function zipStore(files){
+ const enc=new TextEncoder(), locals=[], centrals=[]; let offset=0;
+ for(const f of files){
+  const name=enc.encode(f.name), data=typeof f.data==='string'?enc.encode(f.data):f.data, crc=crc32(data);
+  const local=joinBytes([u32(0x04034b50),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),name,data]);
+  locals.push(local);
+  const central=joinBytes([u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset),name]);
+  centrals.push(central); offset+=local.length;
+ }
+ const centralBlock=joinBytes(centrals), localBlock=joinBytes(locals);
+ const end=joinBytes([u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),u32(centralBlock.length),u32(localBlock.length),u16(0)]);
+ return joinBytes([localBlock,centralBlock,end]);
+}
+function exportExcel(){
+ const rows=[['Title','Category','Tags','Prompt','Favorite']];
+ for(const p of state.prompts||[]){
+  rows.push([p.title||'',p.category||'',Array.isArray(p.tags)?p.tags.join(', '):(p.tags||''),p.body||p.text||p.prompt||'',p.favorite?'Yes':'No']);
+ }
+ const sheetRows=rows.map((r,ri)=>'<row r="'+(ri+1)+'">'+r.map((v,ci)=>{
+  let n=ci+1,col='';while(n){n--;col=String.fromCharCode(65+n%26)+col;n=Math.floor(n/26)}
+  return '<c r="'+col+(ri+1)+'" t="inlineStr"><is><t xml:space="preserve">'+xmlEsc(v)+'</t></is></c>'
+ }).join('')+'</row>').join('');
+ const sheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+sheetRows+'</sheetData></worksheet>';
+ const files=[
+  {name:'[Content_Types].xml',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'},
+  {name:'_rels/.rels',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+  {name:'xl/workbook.xml',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Prompts" sheetId="1" r:id="rId1"/></sheets></workbook>'},
+  {name:'xl/_rels/workbook.xml.rels',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'},
+  {name:'xl/worksheets/sheet1.xml',data:sheet}
+ ];
+ const blob=new Blob([zipStore(files)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='prompt-vault-prompts.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Excel file exported');
+}
+
 function importData(file){const r=new FileReader();r.onload=()=>{try{const d=normalize(JSON.parse(r.result));if(!d)throw 0;state=d;markChanged();persist();toast('Backup imported')}catch(e){alert('That file is not a valid Prompt Vault backup.')}};r.readAsText(file)}
 
 // ---- Google Drive sync ----
@@ -215,7 +256,7 @@ function renderMobileCategories(){const box=$('#mobileCategoryList');if(!box)ret
 function openMobileSheet(mode='more'){renderMobileCategories();$('#sheetTitle').textContent=mode==='categories'?'Categories':'More';$('#mobileCategoriesSection').style.display=mode==='categories'?'block':'none';$('#mobileMoreSection').style.display=mode==='more'?'block':'none';$('#mobileSheet').classList.add('show');updateSyncUI()}
 function closeMobileSheet(){$('#mobileSheet').classList.remove('show')}
 $$('[data-view]').forEach(b=>b.onclick=()=>{currentView=b.dataset.view;currentCategory=null;render()});$$('[data-mobile]').forEach(b=>b.onclick=()=>{currentView=b.dataset.mobile;currentCategory=null;render()});
-$('#search').oninput=render;$('#newPromptTop').onclick=()=>openPrompt();$('#mobileAdd').onclick=()=>openPrompt();$('#mobileCategories').onclick=()=>openMobileSheet('categories');$('#mobileMore').onclick=()=>openMobileSheet('more');$('#closeMobileSheet').onclick=closeMobileSheet;$('#mobileCloseSheetAction').onclick=closeMobileSheet;$('#mobileSheet').onclick=e=>{if(e.target===$('#mobileSheet'))closeMobileSheet()};$('#mobileNewCategory').onclick=()=>{closeMobileSheet();newCategory()};$('#cancelPrompt').onclick=closePrompt;$('#savePrompt').onclick=savePrompt;$('#deletePrompt').onclick=deletePrompt;$('#addCategory').onclick=newCategory;$('#cancelCategory').onclick=()=>$('#categoryModal').classList.remove('show');$('#saveCategory').onclick=saveCategory;$('#cancelVariables').onclick=()=>$('#variablesModal').classList.remove('show');$('#copyResolved').onclick=resolvedCopy;$('#exportBtn').onclick=exportData;$('#exportTop').onclick=exportData;$('#mobileExport').onclick=()=>{closeMobileSheet();exportData()};$('#mobileImport').onclick=()=>{closeMobileSheet();$('#importFile').click()};$('#mobileDriveSettings').onclick=()=>{closeMobileSheet();openDriveSettings()};$('#mobileConnectDrive').onclick=()=>{closeMobileSheet();drive.connected?syncDrive(true):connectDrive()};$('#mobileSyncNow').onclick=()=>syncDrive(true);$('#importBtn').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
+$('#search').oninput=render;$('#newPromptTop').onclick=()=>openPrompt();$('#mobileAdd').onclick=()=>openPrompt();$('#mobileCategories').onclick=()=>openMobileSheet('categories');$('#mobileMore').onclick=()=>openMobileSheet('more');$('#closeMobileSheet').onclick=closeMobileSheet;$('#mobileCloseSheetAction').onclick=closeMobileSheet;$('#mobileSheet').onclick=e=>{if(e.target===$('#mobileSheet'))closeMobileSheet()};$('#mobileNewCategory').onclick=()=>{closeMobileSheet();newCategory()};$('#cancelPrompt').onclick=closePrompt;$('#savePrompt').onclick=savePrompt;$('#deletePrompt').onclick=deletePrompt;$('#addCategory').onclick=newCategory;$('#cancelCategory').onclick=()=>$('#categoryModal').classList.remove('show');$('#saveCategory').onclick=saveCategory;$('#cancelVariables').onclick=()=>$('#variablesModal').classList.remove('show');$('#copyResolved').onclick=resolvedCopy;$('#exportBtn').onclick=exportData;$('#excelBtn').onclick=exportExcel;$('#exportTop').onclick=exportData;$('#mobileExport').onclick=()=>{closeMobileSheet();exportData()};$('#mobileExcel').onclick=()=>{closeMobileSheet();exportExcel()};$('#mobileImport').onclick=()=>{closeMobileSheet();$('#importFile').click()};$('#mobileDriveSettings').onclick=()=>{closeMobileSheet();openDriveSettings()};$('#mobileConnectDrive').onclick=()=>{closeMobileSheet();drive.connected?syncDrive(true):connectDrive()};$('#mobileSyncNow').onclick=()=>syncDrive(true);$('#importBtn').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
 $('#driveSettings').onclick=openDriveSettings;$('#driveSignIn').onclick=()=>drive.connected?syncDrive(true):connectDrive();$('#syncNow').onclick=()=>syncDrive(true);$('#cancelDrive').onclick=()=>$('#driveModal').classList.remove('show');$('#saveDriveSettings').onclick=saveDriveSettings;$('#disconnectDrive').onclick=disconnectDrive;
 window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#search').focus()}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openPrompt()}});
 load();render();updateSyncUI();restoreDriveConnection();

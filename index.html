@@ -40,6 +40,14 @@
     .category-drop-target{outline:2px dashed #60a5fa!important;outline-offset:-2px;background:rgba(59,130,246,.12)!important}
     .main-category-drop{display:none;margin:2px 8px 6px;padding:8px;border:1px dashed #4b5563;border-radius:8px;color:#9ca3af;font-size:11px;text-align:center}
     aside:has(.dragging-category) .main-category-drop{display:block}
+
+    .attachment-list{display:grid;gap:8px;margin-top:10px}
+    .attachment-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+    .attachment-thumb{width:42px;height:42px;border-radius:8px;object-fit:cover;border:1px solid var(--border)}
+    .attachment-icon{width:42px;height:42px;border-radius:8px;display:grid;place-items:center;border:1px solid var(--border);font-size:20px}
+    .attachment-meta{min-width:0;flex:1}.attachment-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.attachment-size{font-size:11px;color:#9ca3af}
+    .attachment-remove,.attachment-open{border:0;background:transparent;cursor:pointer;color:#9ca3af;padding:5px}
+    .card-attachments{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.card-attachment-chip{font-size:11px;padding:4px 7px;border:1px solid var(--border);border-radius:999px;background:var(--panel)}
 </style>
 </head>
 <body>
@@ -58,7 +66,7 @@
     <button id="excelBtn" class="side-btn">▦ Export to Excel</button>
     <button id="importBtn" class="side-btn">⇧ Import backup</button>
     <input type="file" id="importFile" accept="application/json" hidden />
-    <div class="mini">Prompt Vault v3.3.5 • Local-first. Google Drive sync is optional.</div>
+    <div class="mini">Prompt Vault v3.4 • Local-first. Google Drive sync is optional.</div>
   </aside>
 
   <main>
@@ -112,6 +120,12 @@
       <div class="field"><label>Tags</label><input id="pTags" placeholder="email, work, concise" /></div>
     </div>
     <div class="field"><label>Prompt</label><textarea id="pText" placeholder="Write or paste your prompt here…"></textarea><div class="hint">Tip: use variables like {{topic}}, {{tone}}, or {{audience}}. When you copy, the app will ask you to fill them in.</div></div>
+    <div class="field">
+      <label>Attached files</label>
+      <input id="promptFiles" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.ppt,.pptx" />
+      <div class="hint">Attach files that belong with this prompt. Example: “Create a photo based on the attached picture.”</div>
+      <div id="promptAttachmentList" class="attachment-list"></div>
+    </div>
     <div class="field"><label><input id="pFavorite" type="checkbox" /> Favorite</label></div>
     <div class="modal-actions"><button id="cancelPrompt" class="ghost">Cancel</button><button id="deletePrompt" class="danger" style="display:none">Delete</button><button id="savePrompt" class="primary">Save Prompt</button></div>
   </div>
@@ -137,7 +151,7 @@
 const KEY='promptVaultDataV2', OLD_KEY='promptVaultDataV1', CFG_KEY='promptVaultDriveConfigV1', SESSION_KEY='promptVaultDriveSessionV1';
 const DRIVE_SCOPE='https://www.googleapis.com/auth/drive.appdata';
 const DRIVE_FILE='prompt-vault.json';
-let state={schemaVersion:4,categories:['Work','Personal','Travel','Images'],categoryParents:{},collapsedCategories:{},prompts:[],deletedPrompts:{},updatedAt:0};
+let state={schemaVersion:5,categories:['Work','Personal','Travel','Images'],categoryParents:{},collapsedCategories:{},prompts:[],deletedPrompts:{},updatedAt:0};
 let drive={clientId:'',syncMode:'auto',token:'',tokenExpiresAt:0,tokenClient:null,fileId:null,connected:false,syncing:false,lastSync:0,autoConnect:true};
 let currentView='all', currentCategory=null, editingId=null, pendingCopyText='', syncTimer=null;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -150,8 +164,8 @@ function dedupeExactPrompts(prompts=[]){
 }
 function normalize(d){
   if(!d||!Array.isArray(d.prompts)||!Array.isArray(d.categories)) return null;
-  d.schemaVersion=2; d.deletedPrompts=d.deletedPrompts||{}; d.updatedAt=d.updatedAt||0;
-  d.prompts=dedupeExactPrompts(d.prompts.map(p=>({...p,createdAt:p.createdAt||now(),updatedAt:p.updatedAt||p.createdAt||d.updatedAt||now()})));
+  d.schemaVersion=5; d.deletedPrompts=d.deletedPrompts||{}; d.categoryParents=d.categoryParents||{}; d.collapsedCategories=d.collapsedCategories||{}; d.updatedAt=d.updatedAt||0;
+  d.prompts=dedupeExactPrompts(d.prompts.map(p=>({...p,attachments:Array.isArray(p.attachments)?p.attachments:[],createdAt:p.createdAt||now(),updatedAt:p.updatedAt||p.createdAt||d.updatedAt||now()})));
   return d;
 }
 function load(){
@@ -263,11 +277,31 @@ function renderCats(){
   state.categories.filter(cat=>!rendered.has(cat)).sort((a,b)=>a.localeCompare(b)).forEach(cat=>addRow(cat,false));
   enablePromptDragDrop();
 }
-function render(){renderCats();const items=filtered();let title=currentCategory?currentCategory:(currentView==='favorites'?'Favorites':'All Prompts');$('#viewTitle').textContent=title;$('#summary').textContent=`${items.length} prompt${items.length===1?'':'s'} • ${state.categories.length} categories`;$$('.side-btn[data-view]').forEach(b=>b.classList.toggle('active',!currentCategory&&b.dataset.view===currentView));const g=$('#grid');if(!items.length){g.innerHTML='<div class="empty">No prompts found. Add one or try a different search.</div>';return}g.innerHTML=items.map(p=>`<article class="card" draggable="true" data-prompt-id="${p.id}"><div class="card-top"><div class="title">${esc(p.title)}</div><button class="star ${p.favorite?'on':''}" data-star="${p.id}">★</button></div><div class="meta"><span class="pill">${esc(p.category||'Uncategorized')}</span>${(p.tags||[]).map(t=>`<span class="pill tag">${esc(t)}</span>`).join('')}</div><div class="prompt">${esc(p.text)}</div><div class="card-actions"><button data-edit="${p.id}">Edit</button><button class="copy" data-copy="${p.id}">Copy</button></div></article>`).join('');$$('[data-star]').forEach(b=>b.onclick=()=>{const p=state.prompts.find(x=>x.id===b.dataset.star);p.favorite=!p.favorite;p.updatedAt=now();markChanged();persist()});$$('[data-edit]').forEach(b=>b.onclick=()=>openPrompt(b.dataset.edit));$$('[data-copy]').forEach(b=>b.onclick=()=>copyPrompt(b.dataset.copy));enablePromptDragDrop();}
+function render(){renderCats();const items=filtered();let title=currentCategory?currentCategory:(currentView==='favorites'?'Favorites':'All Prompts');$('#viewTitle').textContent=title;$('#summary').textContent=`${items.length} prompt${items.length===1?'':'s'} • ${state.categories.length} categories`;$$('.side-btn[data-view]').forEach(b=>b.classList.toggle('active',!currentCategory&&b.dataset.view===currentView));const g=$('#grid');if(!items.length){g.innerHTML='<div class="empty">No prompts found. Add one or try a different search.</div>';return}g.innerHTML=items.map(p=>`<article class="card" draggable="true" data-prompt-id="${p.id}"><div class="card-top"><div class="title">${esc(p.title)}</div><button class="star ${p.favorite?'on':''}" data-star="${p.id}">★</button></div><div class="meta"><span class="pill">${esc(p.category||'Uncategorized')}</span>${(p.tags||[]).map(t=>`<span class="pill tag">${esc(t)}</span>`).join('')}</div><div class="prompt">${esc(p.text)}</div>${attachmentSummary(p)}<div class="card-actions"><button data-edit="${p.id}">Edit</button><button class="copy" data-copy="${p.id}">Copy</button></div></article>`).join('');$$('[data-star]').forEach(b=>b.onclick=()=>{const p=state.prompts.find(x=>x.id===b.dataset.star);p.favorite=!p.favorite;p.updatedAt=now();markChanged();persist()});$$('[data-edit]').forEach(b=>b.onclick=()=>openPrompt(b.dataset.edit));$$('[data-copy]').forEach(b=>b.onclick=()=>copyPrompt(b.dataset.copy));enablePromptDragDrop();}
 function fillCategorySelect(){const s=$('#pCategory');s.innerHTML=state.categories.map(c=>`<option>${esc(c)}</option>`).join('')+`<option>Uncategorized</option>`}
-function openPrompt(id=null){editingId=id;fillCategorySelect();const p=id?state.prompts.find(x=>x.id===id):null;$('#modalTitle').textContent=p?'Edit Prompt':'New Prompt';$('#pTitle').value=p?.title||'';$('#pCategory').value=p?.category||(currentCategory||state.categories[0]||'Uncategorized');$('#pTags').value=(p?.tags||[]).join(', ');$('#pText').value=p?.text||'';$('#pFavorite').checked=!!p?.favorite;$('#deletePrompt').style.display=p?'inline-block':'none';$('#promptModal').classList.add('show');setTimeout(()=>$('#pTitle').focus(),50)}
+
+let editingAttachments=[];
+function humanFileSize(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
+function fileToDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)})}
+async function addPromptFiles(fileList){
+  for(const file of [...fileList]){
+    if(file.size>5*1024*1024){toast(file.name+' is over 5 MB');continue}
+    editingAttachments.push({id:crypto.randomUUID?crypto.randomUUID():String(now())+Math.random(),name:file.name,type:file.type||'application/octet-stream',size:file.size,dataUrl:await fileToDataUrl(file)});
+  }
+  $('#promptFiles').value='';
+  renderPromptAttachments();
+}
+function renderPromptAttachments(){
+  const host=$('#promptAttachmentList');if(!host)return;
+  host.innerHTML=editingAttachments.map(a=>{const img=(a.type||'').startsWith('image/');return `<div class="attachment-item">${img?`<img class="attachment-thumb" src="${a.dataUrl}" alt="">`:`<div class="attachment-icon">📎</div>`}<div class="attachment-meta"><div class="attachment-name">${esc(a.name)}</div><div class="attachment-size">${humanFileSize(a.size||0)}</div></div><button type="button" class="attachment-open" data-open-attachment="${esc(a.id)}">↗</button><button type="button" class="attachment-remove" data-remove-attachment="${esc(a.id)}">✕</button></div>`}).join('');
+  $$('[data-remove-attachment]').forEach(b=>b.onclick=()=>{editingAttachments=editingAttachments.filter(a=>a.id!==b.dataset.removeAttachment);renderPromptAttachments()});
+  $$('[data-open-attachment]').forEach(b=>b.onclick=()=>{const a=editingAttachments.find(x=>x.id===b.dataset.openAttachment);if(a)window.open(a.dataUrl,'_blank')});
+}
+function attachmentSummary(p){const a=Array.isArray(p.attachments)?p.attachments:[];if(!a.length)return '';return `<div class="card-attachments">${a.slice(0,3).map(x=>`<span class="card-attachment-chip">📎 ${esc(x.name)}</span>`).join('')}${a.length>3?`<span class="card-attachment-chip">+${a.length-3}</span>`:''}</div>`}
+
+function openPrompt(id=null){editingId=id;fillCategorySelect();const p=id?state.prompts.find(x=>x.id===id):null;editingAttachments=JSON.parse(JSON.stringify(p?.attachments||[]));$('#modalTitle').textContent=p?'Edit Prompt':'New Prompt';$('#pTitle').value=p?.title||'';$('#pCategory').value=p?.category||(currentCategory||state.categories[0]||'Uncategorized');$('#pTags').value=(p?.tags||[]).join(', ');$('#pText').value=p?.text||'';$('#pFavorite').checked=!!p?.favorite;$('#deletePrompt').style.display=p?'inline-block':'none';$('#promptFiles').value='';renderPromptAttachments();$('#promptModal').classList.add('show');setTimeout(()=>$('#pTitle').focus(),50)}
 function closePrompt(){$('#promptModal').classList.remove('show')}
-function savePrompt(){const title=$('#pTitle').value.trim(), text=$('#pText').value.trim();if(!title||!text){toast('Title and prompt are required');return}const t=now(),data={title,category:$('#pCategory').value,tags:$('#pTags').value.split(',').map(x=>x.trim()).filter(Boolean),text,favorite:$('#pFavorite').checked,updatedAt:t};if(editingId){Object.assign(state.prompts.find(x=>x.id===editingId),data)}else{state.prompts.push({id:crypto.randomUUID(),createdAt:t,...data})}markChanged();closePrompt();persist();toast(editingId?'Prompt updated':'Prompt saved')}
+function savePrompt(){const title=$('#pTitle').value.trim(), text=$('#pText').value.trim();if(!title||!text){toast('Title and prompt are required');return}const t=now(),data={title,category:$('#pCategory').value,tags:$('#pTags').value.split(',').map(x=>x.trim()).filter(Boolean),text,favorite:$('#pFavorite').checked,attachments:JSON.parse(JSON.stringify(editingAttachments)),updatedAt:t};if(editingId){Object.assign(state.prompts.find(x=>x.id===editingId),data)}else{state.prompts.push({id:crypto.randomUUID(),createdAt:t,...data})}markChanged();closePrompt();persist();toast(editingId?'Prompt updated':'Prompt saved')}
 function deletePrompt(){if(!editingId)return;if(confirm('Delete this prompt?')){const t=now();state.deletedPrompts[editingId]=t;state.prompts=state.prompts.filter(x=>x.id!==editingId);markChanged();closePrompt();persist();toast('Prompt deleted')}}
 function variables(text){return [...new Set([...text.matchAll(/{{\s*([^{}]+?)\s*}}/g)].map(m=>m[1]))]}
 function copyPrompt(id){const p=state.prompts.find(x=>x.id===id), vars=variables(p.text);pendingCopyText=p.text;if(vars.length){const f=$('#variablesFields');f.innerHTML=vars.map((v,i)=>`<div class="field"><label>${esc(v)}</label><input data-var="${esc(v)}" placeholder="Enter ${esc(v)}" ${i===0?'autofocus':''}></div>`).join('');$('#variablesModal').classList.add('show');setTimeout(()=>f.querySelector('input')?.focus(),40)}else{copyText(p.text)}}
@@ -302,9 +336,9 @@ function zipStore(files){
  return joinBytes([localBlock,centralBlock,end]);
 }
 function exportExcel(){
- const rows=[['Title','Category','Tags','Prompt','Favorite']];
+ const rows=[['Title','Category','Tags','Prompt','Favorite','Attachments']];
  for(const p of state.prompts||[]){
-  rows.push([p.title||'',p.category||'',Array.isArray(p.tags)?p.tags.join(', '):(p.tags||''),p.body||p.text||p.prompt||'',p.favorite?'Yes':'No']);
+  rows.push([p.title||'',p.category||'',Array.isArray(p.tags)?p.tags.join(', '):(p.tags||''),p.body||p.text||p.prompt||'',p.favorite?'Yes':'No',(p.attachments||[]).map(a=>a.name).join(', ')]);
  }
  const sheetRows=rows.map((r,ri)=>'<row r="'+(ri+1)+'">'+r.map((v,ci)=>{
   let n=ci+1,col='';while(n){n--;col=String.fromCharCode(65+n%26)+col;n=Math.floor(n/26)}
@@ -367,7 +401,7 @@ function mergeStates(local,cloud){
   if(!cloud)return local;const deleted={...(cloud.deletedPrompts||{}),...(local.deletedPrompts||{})};for(const [id,t] of Object.entries(cloud.deletedPrompts||{}))deleted[id]=Math.max(deleted[id]||0,t);for(const [id,t] of Object.entries(local.deletedPrompts||{}))deleted[id]=Math.max(deleted[id]||0,t);
   const map=new Map();for(const p of [...(cloud.prompts||[]),...(local.prompts||[])]){const old=map.get(p.id);if(!old||(p.updatedAt||0)>(old.updatedAt||0))map.set(p.id,p)}
   for(const [id,t] of Object.entries(deleted)){const p=map.get(id);if(p && t>=(p.updatedAt||0))map.delete(id)}
-  const cats=[...new Set([...(cloud.categories||[]),...(local.categories||[])])];const categoryParents={...(cloud.categoryParents||{}),...(local.categoryParents||{})};const collapsedCategories={...(cloud.collapsedCategories||{}),...(local.collapsedCategories||{})};return {schemaVersion:4,categories:cats,categoryParents,collapsedCategories,prompts:dedupeExactPrompts([...map.values()]),deletedPrompts:deleted,updatedAt:Math.max(local.updatedAt||0,cloud.updatedAt||0)};
+  const cats=[...new Set([...(cloud.categories||[]),...(local.categories||[])])];const categoryParents={...(cloud.categoryParents||{}),...(local.categoryParents||{})};const collapsedCategories={...(cloud.collapsedCategories||{}),...(local.collapsedCategories||{})};return {schemaVersion:5,categories:cats,categoryParents,collapsedCategories,prompts:dedupeExactPrompts([...map.values()]).map(p=>({...p,attachments:Array.isArray(p.attachments)?p.attachments:[]})),deletedPrompts:deleted,updatedAt:Math.max(local.updatedAt||0,cloud.updatedAt||0)};
 }
 function scheduleSync(){clearTimeout(syncTimer);syncTimer=setTimeout(()=>syncDrive(false),900)}
 async function syncDrive(interactive=false){
@@ -423,11 +457,11 @@ function renderMobileCategories(){
 function openMobileSheet(mode='more'){renderMobileCategories();$('#sheetTitle').textContent=mode==='categories'?'Categories':'More';$('#mobileCategoriesSection').style.display=mode==='categories'?'block':'none';$('#mobileMoreSection').style.display=mode==='more'?'block':'none';$('#mobileSheet').classList.add('show');updateSyncUI()}
 function closeMobileSheet(){$('#mobileSheet').classList.remove('show')}
 $$('[data-view]').forEach(b=>b.onclick=()=>{currentView=b.dataset.view;currentCategory=null;render()});$$('[data-mobile]').forEach(b=>b.onclick=()=>{currentView=b.dataset.mobile;currentCategory=null;render()});
-$('#search').oninput=render;$('#newPromptTop').onclick=()=>openPrompt();$('#mobileAdd').onclick=()=>openPrompt();$('#mobileCategories').onclick=()=>openMobileSheet('categories');$('#mobileMore').onclick=()=>openMobileSheet('more');$('#closeMobileSheet').onclick=closeMobileSheet;$('#mobileCloseSheetAction').onclick=closeMobileSheet;$('#mobileSheet').onclick=e=>{if(e.target===$('#mobileSheet'))closeMobileSheet()};$('#mobileNewCategory').onclick=()=>{closeMobileSheet();newCategory()};$('#cancelManageCategory').onclick=()=>$('#manageCategoryModal').classList.remove('show');$('#manageCategoryModal').onclick=e=>{if(e.target===$('#manageCategoryModal'))$('#manageCategoryModal').classList.remove('show')};$('#saveManageCategory').onclick=saveManageCategory;$('#cancelPrompt').onclick=closePrompt;$('#savePrompt').onclick=savePrompt;$('#deletePrompt').onclick=deletePrompt;$('#addCategory').onclick=newCategory;$('#cancelCategory').onclick=()=>$('#categoryModal').classList.remove('show');$('#saveCategory').onclick=saveCategory;$('#cancelVariables').onclick=()=>$('#variablesModal').classList.remove('show');$('#copyResolved').onclick=resolvedCopy;$('#exportBtn').onclick=exportData;$('#excelBtn').onclick=exportExcel;$('#exportTop').onclick=exportData;$('#mobileExport').onclick=()=>{closeMobileSheet();exportData()};$('#mobileExcel').onclick=()=>{closeMobileSheet();exportExcel()};$('#mobileImport').onclick=()=>{closeMobileSheet();$('#importFile').click()};$('#mobileDriveSettings').onclick=()=>{closeMobileSheet();openDriveSettings()};$('#mobileConnectDrive').onclick=()=>{closeMobileSheet();drive.connected?syncDrive(true):connectDrive()};$('#mobileSyncNow').onclick=()=>syncDrive(true);$('#importBtn').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
+$('#search').oninput=render;$('#newPromptTop').onclick=()=>openPrompt();$('#mobileAdd').onclick=()=>openPrompt();$('#mobileCategories').onclick=()=>openMobileSheet('categories');$('#mobileMore').onclick=()=>openMobileSheet('more');$('#closeMobileSheet').onclick=closeMobileSheet;$('#mobileCloseSheetAction').onclick=closeMobileSheet;$('#mobileSheet').onclick=e=>{if(e.target===$('#mobileSheet'))closeMobileSheet()};$('#mobileNewCategory').onclick=()=>{closeMobileSheet();newCategory()};$('#cancelManageCategory').onclick=()=>$('#manageCategoryModal').classList.remove('show');$('#manageCategoryModal').onclick=e=>{if(e.target===$('#manageCategoryModal'))$('#manageCategoryModal').classList.remove('show')};$('#saveManageCategory').onclick=saveManageCategory;$('#promptFiles').onchange=e=>addPromptFiles(e.target.files);$('#cancelPrompt').onclick=closePrompt;$('#savePrompt').onclick=savePrompt;$('#deletePrompt').onclick=deletePrompt;$('#addCategory').onclick=newCategory;$('#cancelCategory').onclick=()=>$('#categoryModal').classList.remove('show');$('#saveCategory').onclick=saveCategory;$('#cancelVariables').onclick=()=>$('#variablesModal').classList.remove('show');$('#copyResolved').onclick=resolvedCopy;$('#exportBtn').onclick=exportData;$('#excelBtn').onclick=exportExcel;$('#exportTop').onclick=exportData;$('#mobileExport').onclick=()=>{closeMobileSheet();exportData()};$('#mobileExcel').onclick=()=>{closeMobileSheet();exportExcel()};$('#mobileImport').onclick=()=>{closeMobileSheet();$('#importFile').click()};$('#mobileDriveSettings').onclick=()=>{closeMobileSheet();openDriveSettings()};$('#mobileConnectDrive').onclick=()=>{closeMobileSheet();drive.connected?syncDrive(true):connectDrive()};$('#mobileSyncNow').onclick=()=>syncDrive(true);$('#importBtn').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
 $('#driveSettings').onclick=openDriveSettings;$('#driveSignIn').onclick=()=>drive.connected?syncDrive(true):connectDrive();$('#syncNow').onclick=()=>syncDrive(true);$('#cancelDrive').onclick=()=>$('#driveModal').classList.remove('show');$('#saveDriveSettings').onclick=saveDriveSettings;$('#disconnectDrive').onclick=disconnectDrive;
 window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#search').focus()}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openPrompt()}});
 load();render();updateSyncUI();restoreDriveConnection();
-if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.3.5',{updateViaCache:'none'});await reg.update()}catch(e){}});
+if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.4',{updateViaCache:'none'});await reg.update()}catch(e){}});
 </script>
 </body>
 </html>

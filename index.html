@@ -48,6 +48,9 @@
     .attachment-meta{min-width:0;flex:1}.attachment-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.attachment-size{font-size:11px;color:#9ca3af}
     .attachment-remove,.attachment-open{border:0;background:transparent;cursor:pointer;color:#9ca3af;padding:5px}
     .card-attachments{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.card-attachment-chip{font-size:11px;padding:4px 7px;border:1px solid var(--border);border-radius:999px;background:var(--panel)}
+
+    .danger{background:#fff1f2!important;color:#b91c1c!important;border:1px solid #fecdd3!important}
+    .danger:hover{background:#ffe4e6!important}
 </style>
 </head>
 <body>
@@ -66,7 +69,7 @@
     <button id="excelBtn" class="side-btn">▦ Export to Excel</button>
     <button id="importBtn" class="side-btn">⇧ Import backup</button>
     <input type="file" id="importFile" accept="application/json" hidden />
-    <div class="mini">Prompt Vault v3.4 • Local-first. Google Drive sync is optional.</div>
+    <div class="mini">Prompt Vault v3.4.1 • Local-first. Google Drive sync is optional.</div>
   </aside>
 
   <main>
@@ -109,7 +112,7 @@
     <div class="field"><label>Parent category</label><select id="parentCategorySelect"><option value="">None — main category</option></select>
       <div class="hint">Choose a parent to make this a subcategory.</div>
     </div>
-    <div class="modal-actions"><button id="cancelManageCategory" class="ghost">Cancel</button><button id="saveManageCategory" class="primary">Save</button></div>
+    <div class="modal-actions" style="justify-content:space-between"><button id="deleteManageCategory" class="danger">Delete category</button><span style="display:flex;gap:8px"><button id="cancelManageCategory" class="ghost">Cancel</button><button id="saveManageCategory" class="primary">Save</button></span></div>
   </div>
 </div><div id="promptModal" class="overlay">
   <div class="modal">
@@ -310,6 +313,38 @@ function resolvedCopy(){let t=pendingCopyText;$$('[data-var]').forEach(i=>{const
 
 let managingCategory=null;
 function openManageCategory(cat){managingCategory=cat;state.categoryParents=state.categoryParents||{};$('#renameCategoryInput').value=cat;const sel=$('#parentCategorySelect');const mainCats=state.categories.filter(c=>c!==cat&&!state.categoryParents[c]);sel.innerHTML='<option value="">None — main category</option>'+mainCats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');sel.value=state.categoryParents[cat]||'';$('#manageCategoryModal').classList.add('show')}
+
+function deleteManagedCategory(){
+  if(!managingCategory)return;
+  const cat=managingCategory;
+  if(!confirm(`Are you sure you want to delete this category?`))return;
+
+  state.categoryParents=state.categoryParents||{};
+  state.collapsedCategories=state.collapsedCategories||{};
+
+  // Move prompts in the deleted category to Uncategorized so nothing is lost.
+  if(!state.categories.includes('Uncategorized')) state.categories.push('Uncategorized');
+  state.prompts.forEach(p=>{
+    if(p.category===cat){p.category='Uncategorized';p.updatedAt=now()}
+  });
+
+  // Any direct subcategories become main categories instead of being deleted.
+  Object.keys(state.categoryParents).forEach(child=>{
+    if(state.categoryParents[child]===cat) delete state.categoryParents[child];
+  });
+
+  delete state.categoryParents[cat];
+  delete state.collapsedCategories[cat];
+  state.categories=state.categories.filter(c=>c!==cat);
+
+  if(currentCategory===cat) currentCategory=null;
+  managingCategory=null;
+  markChanged();
+  $('#manageCategoryModal').classList.remove('show');
+  persist();
+  toast('Category deleted');
+}
+
 function saveManageCategory(){if(!managingCategory)return;const old=managingCategory,n=$('#renameCategoryInput').value.trim(),parent=$('#parentCategorySelect').value;if(!n)return;if(n!==old&&state.categories.some(c=>c!==old&&c.toLowerCase()===n.toLowerCase())){toast('Category already exists');return}state.categoryParents=state.categoryParents||{};if(n!==old){state.categories=state.categories.map(c=>c===old?n:c);state.prompts.forEach(p=>{if(p.category===old)p.category=n});const op=state.categoryParents[old];delete state.categoryParents[old];if(op)state.categoryParents[n]=op;Object.keys(state.categoryParents).forEach(k=>{if(state.categoryParents[k]===old)state.categoryParents[k]=n});if(currentCategory===old)currentCategory=n}if(parent&&parent!==n)state.categoryParents[n]=parent;else delete state.categoryParents[n];markChanged();$('#manageCategoryModal').classList.remove('show');persist();toast('Category updated')}
 function enablePromptDragDrop(){$$('.card[data-prompt-id]').forEach(card=>{card.ondragstart=e=>{card.classList.add('dragging');e.dataTransfer.setData('text/prompt-id',card.dataset.promptId)};card.ondragend=()=>card.classList.remove('dragging')});$$('[data-cat],[data-mobile-cat]').forEach(el=>{const cat=el.dataset.cat||el.dataset.mobileCat;if(!cat)return;el.ondragover=e=>{e.preventDefault();el.classList.add('drop-target')};el.ondragleave=()=>el.classList.remove('drop-target');el.ondrop=e=>{e.preventDefault();el.classList.remove('drop-target');const id=e.dataTransfer.getData('text/prompt-id'),p=state.prompts.find(x=>x.id===id);if(p&&p.category!==cat){p.category=cat;p.updatedAt=now();markChanged();persist();toast('Prompt moved to '+cat)}}})}
 
@@ -457,11 +492,11 @@ function renderMobileCategories(){
 function openMobileSheet(mode='more'){renderMobileCategories();$('#sheetTitle').textContent=mode==='categories'?'Categories':'More';$('#mobileCategoriesSection').style.display=mode==='categories'?'block':'none';$('#mobileMoreSection').style.display=mode==='more'?'block':'none';$('#mobileSheet').classList.add('show');updateSyncUI()}
 function closeMobileSheet(){$('#mobileSheet').classList.remove('show')}
 $$('[data-view]').forEach(b=>b.onclick=()=>{currentView=b.dataset.view;currentCategory=null;render()});$$('[data-mobile]').forEach(b=>b.onclick=()=>{currentView=b.dataset.mobile;currentCategory=null;render()});
-$('#search').oninput=render;$('#newPromptTop').onclick=()=>openPrompt();$('#mobileAdd').onclick=()=>openPrompt();$('#mobileCategories').onclick=()=>openMobileSheet('categories');$('#mobileMore').onclick=()=>openMobileSheet('more');$('#closeMobileSheet').onclick=closeMobileSheet;$('#mobileCloseSheetAction').onclick=closeMobileSheet;$('#mobileSheet').onclick=e=>{if(e.target===$('#mobileSheet'))closeMobileSheet()};$('#mobileNewCategory').onclick=()=>{closeMobileSheet();newCategory()};$('#cancelManageCategory').onclick=()=>$('#manageCategoryModal').classList.remove('show');$('#manageCategoryModal').onclick=e=>{if(e.target===$('#manageCategoryModal'))$('#manageCategoryModal').classList.remove('show')};$('#saveManageCategory').onclick=saveManageCategory;$('#promptFiles').onchange=e=>addPromptFiles(e.target.files);$('#cancelPrompt').onclick=closePrompt;$('#savePrompt').onclick=savePrompt;$('#deletePrompt').onclick=deletePrompt;$('#addCategory').onclick=newCategory;$('#cancelCategory').onclick=()=>$('#categoryModal').classList.remove('show');$('#saveCategory').onclick=saveCategory;$('#cancelVariables').onclick=()=>$('#variablesModal').classList.remove('show');$('#copyResolved').onclick=resolvedCopy;$('#exportBtn').onclick=exportData;$('#excelBtn').onclick=exportExcel;$('#exportTop').onclick=exportData;$('#mobileExport').onclick=()=>{closeMobileSheet();exportData()};$('#mobileExcel').onclick=()=>{closeMobileSheet();exportExcel()};$('#mobileImport').onclick=()=>{closeMobileSheet();$('#importFile').click()};$('#mobileDriveSettings').onclick=()=>{closeMobileSheet();openDriveSettings()};$('#mobileConnectDrive').onclick=()=>{closeMobileSheet();drive.connected?syncDrive(true):connectDrive()};$('#mobileSyncNow').onclick=()=>syncDrive(true);$('#importBtn').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
+$('#search').oninput=render;$('#newPromptTop').onclick=()=>openPrompt();$('#mobileAdd').onclick=()=>openPrompt();$('#mobileCategories').onclick=()=>openMobileSheet('categories');$('#mobileMore').onclick=()=>openMobileSheet('more');$('#closeMobileSheet').onclick=closeMobileSheet;$('#mobileCloseSheetAction').onclick=closeMobileSheet;$('#mobileSheet').onclick=e=>{if(e.target===$('#mobileSheet'))closeMobileSheet()};$('#mobileNewCategory').onclick=()=>{closeMobileSheet();newCategory()};$('#cancelManageCategory').onclick=()=>$('#manageCategoryModal').classList.remove('show');$('#manageCategoryModal').onclick=e=>{if(e.target===$('#manageCategoryModal'))$('#manageCategoryModal').classList.remove('show')};$('#deleteManageCategory').onclick=deleteManagedCategory;$('#saveManageCategory').onclick=saveManageCategory;$('#promptFiles').onchange=e=>addPromptFiles(e.target.files);$('#cancelPrompt').onclick=closePrompt;$('#savePrompt').onclick=savePrompt;$('#deletePrompt').onclick=deletePrompt;$('#addCategory').onclick=newCategory;$('#cancelCategory').onclick=()=>$('#categoryModal').classList.remove('show');$('#saveCategory').onclick=saveCategory;$('#cancelVariables').onclick=()=>$('#variablesModal').classList.remove('show');$('#copyResolved').onclick=resolvedCopy;$('#exportBtn').onclick=exportData;$('#excelBtn').onclick=exportExcel;$('#exportTop').onclick=exportData;$('#mobileExport').onclick=()=>{closeMobileSheet();exportData()};$('#mobileExcel').onclick=()=>{closeMobileSheet();exportExcel()};$('#mobileImport').onclick=()=>{closeMobileSheet();$('#importFile').click()};$('#mobileDriveSettings').onclick=()=>{closeMobileSheet();openDriveSettings()};$('#mobileConnectDrive').onclick=()=>{closeMobileSheet();drive.connected?syncDrive(true):connectDrive()};$('#mobileSyncNow').onclick=()=>syncDrive(true);$('#importBtn').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
 $('#driveSettings').onclick=openDriveSettings;$('#driveSignIn').onclick=()=>drive.connected?syncDrive(true):connectDrive();$('#syncNow').onclick=()=>syncDrive(true);$('#cancelDrive').onclick=()=>$('#driveModal').classList.remove('show');$('#saveDriveSettings').onclick=saveDriveSettings;$('#disconnectDrive').onclick=disconnectDrive;
 window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#search').focus()}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openPrompt()}});
 load();render();updateSyncUI();restoreDriveConnection();
-if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.4',{updateViaCache:'none'});await reg.update()}catch(e){}});
+if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.4.1',{updateViaCache:'none'});await reg.update()}catch(e){}});
 </script>
 </body>
 </html>

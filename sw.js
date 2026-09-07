@@ -1,4 +1,4 @@
-const CACHE='prompt-vault-v3.4.1';
+const CACHE='prompt-vault-v3.4.2';
 const ASSETS=['./','./index.html','./manifest.webmanifest'];
 
 self.addEventListener('install',event=>{

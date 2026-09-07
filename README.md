@@ -1,4 +1,4 @@
-# Prompt Vault v3.4.1 — Persistent Google Drive Sync + Mobile Menu
+# Prompt Vault v3.4.2 — Persistent Google Drive Sync + Mobile Menu
 
 Prompt Vault is a local-first prompt library that works on phone and laptop and optionally synchronizes its data through your private Google Drive **App Data** area.
 
@@ -51,50 +51,50 @@ The bottom navigation provides:
 **More** includes all Drive and backup controls.
 
 
-## v3.4.1
+## v3.4.2
 - Added **Export to Excel** on desktop and mobile.
 - Exports prompts as `prompt-vault-prompts.xlsx` with Title, Category, Tags, Prompt, and Favorite columns.
 
 
-## v3.4.1
+## v3.4.2
 - Rename categories with ✎.
 - Set a parent category to create subcategories.
 - Drag prompt cards onto categories on desktop/laptop to move them.
 - On phones: Edit prompt → Category → Save to move it reliably.
 
-## v3.4.1 fixes
+## v3.4.2 fixes
 - Fixed the Manage Category window so it opens as a proper centered modal instead of appearing permanently at the bottom of the page.
 - Fixed desktop drag-and-drop initialization after prompt cards render.
 - New Category now includes an optional Parent Category selector, so subcategories can be created directly.
 - Parent choices are limited to main categories to keep the hierarchy to one subcategory level.
-- Added a visible v3.4.1 marker in the sidebar footer for deployment verification.
+- Added a visible v3.4.2 marker in the sidebar footer for deployment verification.
 
-## v3.4.1 sidebar fix
+## v3.4.2 sidebar fix
 - Fixed categories disappearing on laptops with shorter browser windows.
 - The category list now has its own guaranteed visible/scrollable area.
 - The whole sidebar can also scroll when the screen height is limited.
 
-## v3.4.1 category-tree fix
+## v3.4.2 category-tree fix
 - Fixed subcategories being displayed under the wrong parent. The sidebar now renders a real parent/child tree instead of sorting all categories only by depth.
 - Parent categories with children now show ▾ / ▸ expand-collapse controls instead of #.
 - Subcategories remain indented beneath their actual parent.
 - Collapse state is remembered and included in the synced database.
 
-## v3.4.1
+## v3.4.2
 - Rebuilt sidebar rendering as a true parent-child tree.
 - Subcategories now render only below the parent stored in categoryParents.
 - Parent categories show ▾ / ▸ instead of #.
 - Added a cache reset and versioned service-worker registration to stop laptops from remaining on older deployed HTML.
 - Online navigation now uses fresh network content first; cache is only an offline fallback.
 
-## v3.4.1 category controls
+## v3.4.2 category controls
 - Case-only renaming now works (for example `Job Search` → `JOB SEARCH`).
 - Parent chevrons are dedicated clickable expand/collapse controls.
 - Categories themselves can now be dragged onto another main category to become subcategories.
 - Drag a subcategory to “Drop here to make main category” to move it back to the top level.
 - Prompt-card drag/drop remains supported separately.
 
-## v3.4.1 file attachments
+## v3.4.2 file attachments
 - Attach multiple files directly to a prompt.
 - Supported picker types include images, PDF, Word, Excel, PowerPoint, TXT, and CSV.
 - Attachments are saved inside the prompt record and therefore included in Prompt Vault JSON backup and Google Drive App Data sync.
@@ -103,8 +103,15 @@ The bottom navigation provides:
 - Prompt cards show attachment names.
 - Excel export lists attachment file names.
 
-## v3.4.1 category deletion
+## v3.4.2 category deletion
 - Added **Delete category** to the Manage Category window.
 - Deletion requires a second confirmation: “Are you sure you want to delete this category?”
 - Prompts from a deleted category are moved to **Uncategorized** so prompt content is not lost.
 - Subcategories under a deleted parent become main categories.
+
+## v3.4.2 category deletion sync fix
+- Deleted categories no longer reappear after Google Drive sync.
+- Category deletions now create synced tombstones.
+- Category create/rename/reparent actions carry timestamps so newer changes win over older cloud state.
+- Renaming also tombstones the old category name, preventing the old spelling/name from returning.
+- Merge logic removes deleted categories and cleans stale parent/collapse references.

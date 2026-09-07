@@ -69,7 +69,7 @@
     <button id="excelBtn" class="side-btn">▦ Export to Excel</button>
     <button id="importBtn" class="side-btn">⇧ Import backup</button>
     <input type="file" id="importFile" accept="application/json" hidden />
-    <div class="mini">Prompt Vault v3.4.1 • Local-first. Google Drive sync is optional.</div>
+    <div class="mini">Prompt Vault v3.4.2 • Local-first. Google Drive sync is optional.</div>
   </aside>
 
   <main>
@@ -154,7 +154,7 @@
 const KEY='promptVaultDataV2', OLD_KEY='promptVaultDataV1', CFG_KEY='promptVaultDriveConfigV1', SESSION_KEY='promptVaultDriveSessionV1';
 const DRIVE_SCOPE='https://www.googleapis.com/auth/drive.appdata';
 const DRIVE_FILE='prompt-vault.json';
-let state={schemaVersion:5,categories:['Work','Personal','Travel','Images'],categoryParents:{},collapsedCategories:{},prompts:[],deletedPrompts:{},updatedAt:0};
+let state={schemaVersion:6,categories:['Work','Personal','Travel','Images'],categoryParents:{},collapsedCategories:{},categoryUpdated:{},deletedCategories:{},prompts:[],deletedPrompts:{},updatedAt:0};
 let drive={clientId:'',syncMode:'auto',token:'',tokenExpiresAt:0,tokenClient:null,fileId:null,connected:false,syncing:false,lastSync:0,autoConnect:true};
 let currentView='all', currentCategory=null, editingId=null, pendingCopyText='', syncTimer=null;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -167,7 +167,7 @@ function dedupeExactPrompts(prompts=[]){
 }
 function normalize(d){
   if(!d||!Array.isArray(d.prompts)||!Array.isArray(d.categories)) return null;
-  d.schemaVersion=5; d.deletedPrompts=d.deletedPrompts||{}; d.categoryParents=d.categoryParents||{}; d.collapsedCategories=d.collapsedCategories||{}; d.updatedAt=d.updatedAt||0;
+  d.schemaVersion=6; d.deletedPrompts=d.deletedPrompts||{}; d.categoryParents=d.categoryParents||{}; d.collapsedCategories=d.collapsedCategories||{}; d.categoryUpdated=d.categoryUpdated||{}; d.deletedCategories=d.deletedCategories||{}; d.updatedAt=d.updatedAt||0; (d.categories||[]).forEach(c=>{if(!d.categoryUpdated[c])d.categoryUpdated[c]=d.updatedAt||1});
   d.prompts=dedupeExactPrompts(d.prompts.map(p=>({...p,attachments:Array.isArray(p.attachments)?p.attachments:[],createdAt:p.createdAt||now(),updatedAt:p.updatedAt||p.createdAt||d.updatedAt||now()})));
   return d;
 }
@@ -207,6 +207,10 @@ function moveCategoryUnder(child,parent){
   }
   if(parent) state.categoryParents[child]=parent;
   else delete state.categoryParents[child];
+  state.categoryUpdated=state.categoryUpdated||{};
+  state.deletedCategories=state.deletedCategories||{};
+  state.categoryUpdated[child]=now();
+  delete state.deletedCategories[child];
   markChanged();
   persist();
   toast(parent?child+' moved under '+parent:child+' moved to main categories');
@@ -330,11 +334,16 @@ function deleteManagedCategory(){
 
   // Any direct subcategories become main categories instead of being deleted.
   Object.keys(state.categoryParents).forEach(child=>{
-    if(state.categoryParents[child]===cat) delete state.categoryParents[child];
+    if(state.categoryParents[child]===cat){delete state.categoryParents[child];state.categoryUpdated=state.categoryUpdated||{};state.categoryUpdated[child]=now();}
   });
 
   delete state.categoryParents[cat];
   delete state.collapsedCategories[cat];
+  state.categoryUpdated=state.categoryUpdated||{};
+  state.deletedCategories=state.deletedCategories||{};
+  const deleteTs=now();
+  state.deletedCategories[cat]=deleteTs;
+  delete state.categoryUpdated[cat];
   state.categories=state.categories.filter(c=>c!==cat);
 
   if(currentCategory===cat) currentCategory=null;
@@ -345,11 +354,11 @@ function deleteManagedCategory(){
   toast('Category deleted');
 }
 
-function saveManageCategory(){if(!managingCategory)return;const old=managingCategory,n=$('#renameCategoryInput').value.trim(),parent=$('#parentCategorySelect').value;if(!n)return;if(n!==old&&state.categories.some(c=>c!==old&&c.toLowerCase()===n.toLowerCase())){toast('Category already exists');return}state.categoryParents=state.categoryParents||{};if(n!==old){state.categories=state.categories.map(c=>c===old?n:c);state.prompts.forEach(p=>{if(p.category===old)p.category=n});const op=state.categoryParents[old];delete state.categoryParents[old];if(op)state.categoryParents[n]=op;Object.keys(state.categoryParents).forEach(k=>{if(state.categoryParents[k]===old)state.categoryParents[k]=n});if(currentCategory===old)currentCategory=n}if(parent&&parent!==n)state.categoryParents[n]=parent;else delete state.categoryParents[n];markChanged();$('#manageCategoryModal').classList.remove('show');persist();toast('Category updated')}
+function saveManageCategory(){if(!managingCategory)return;const old=managingCategory,n=$('#renameCategoryInput').value.trim(),parent=$('#parentCategorySelect').value;if(!n)return;if(n!==old&&state.categories.some(c=>c!==old&&c.toLowerCase()===n.toLowerCase())){toast('Category already exists');return}state.categoryParents=state.categoryParents||{};state.categoryUpdated=state.categoryUpdated||{};state.deletedCategories=state.deletedCategories||{};const ts=now();if(n!==old){state.categories=state.categories.map(c=>c===old?n:c);state.prompts.forEach(p=>{if(p.category===old)p.category=n});const op=state.categoryParents[old];delete state.categoryParents[old];if(op)state.categoryParents[n]=op;Object.keys(state.categoryParents).forEach(k=>{if(state.categoryParents[k]===old)state.categoryParents[k]=n});state.deletedCategories[old]=ts;delete state.categoryUpdated[old];state.categoryUpdated[n]=ts;delete state.deletedCategories[n];if(currentCategory===old)currentCategory=n}else{state.categoryUpdated[n]=ts}if(parent&&parent!==n)state.categoryParents[n]=parent;else delete state.categoryParents[n];markChanged();$('#manageCategoryModal').classList.remove('show');persist();toast('Category updated')}
 function enablePromptDragDrop(){$$('.card[data-prompt-id]').forEach(card=>{card.ondragstart=e=>{card.classList.add('dragging');e.dataTransfer.setData('text/prompt-id',card.dataset.promptId)};card.ondragend=()=>card.classList.remove('dragging')});$$('[data-cat],[data-mobile-cat]').forEach(el=>{const cat=el.dataset.cat||el.dataset.mobileCat;if(!cat)return;el.ondragover=e=>{e.preventDefault();el.classList.add('drop-target')};el.ondragleave=()=>el.classList.remove('drop-target');el.ondrop=e=>{e.preventDefault();el.classList.remove('drop-target');const id=e.dataTransfer.getData('text/prompt-id'),p=state.prompts.find(x=>x.id===id);if(p&&p.category!==cat){p.category=cat;p.updatedAt=now();markChanged();persist();toast('Prompt moved to '+cat)}}})}
 
 function newCategory(){$('#categoryName').value='';state.categoryParents=state.categoryParents||{};const sel=$('#newCategoryParent');sel.innerHTML='<option value="">None — main category</option>'+state.categories.filter(c=>!state.categoryParents[c]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');sel.value='';$('#categoryModal').classList.add('show');setTimeout(()=>$('#categoryName').focus(),30)}
-function saveCategory(){const n=$('#categoryName').value.trim(),parent=$('#newCategoryParent').value;if(!n)return;if(state.categories.some(c=>c.toLowerCase()===n.toLowerCase())){toast('Category already exists');return}state.categories.push(n);state.categoryParents=state.categoryParents||{};if(parent)state.categoryParents[n]=parent;markChanged();$('#categoryModal').classList.remove('show');persist();toast(parent?'Subcategory created':'Category created')}
+function saveCategory(){const n=$('#categoryName').value.trim(),parent=$('#newCategoryParent').value;if(!n)return;if(state.categories.some(c=>c.toLowerCase()===n.toLowerCase())){toast('Category already exists');return}state.categories.push(n);state.categoryParents=state.categoryParents||{};state.categoryUpdated=state.categoryUpdated||{};state.deletedCategories=state.deletedCategories||{};state.categoryUpdated[n]=now();delete state.deletedCategories[n];if(parent)state.categoryParents[n]=parent;markChanged();$('#categoryModal').classList.remove('show');persist();toast(parent?'Subcategory created':'Category created')}
 function exportData(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='prompt-vault-backup.json';a.click();URL.revokeObjectURL(a.href);toast('Backup exported')}
 
 function xmlEsc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -436,7 +445,15 @@ function mergeStates(local,cloud){
   if(!cloud)return local;const deleted={...(cloud.deletedPrompts||{}),...(local.deletedPrompts||{})};for(const [id,t] of Object.entries(cloud.deletedPrompts||{}))deleted[id]=Math.max(deleted[id]||0,t);for(const [id,t] of Object.entries(local.deletedPrompts||{}))deleted[id]=Math.max(deleted[id]||0,t);
   const map=new Map();for(const p of [...(cloud.prompts||[]),...(local.prompts||[])]){const old=map.get(p.id);if(!old||(p.updatedAt||0)>(old.updatedAt||0))map.set(p.id,p)}
   for(const [id,t] of Object.entries(deleted)){const p=map.get(id);if(p && t>=(p.updatedAt||0))map.delete(id)}
-  const cats=[...new Set([...(cloud.categories||[]),...(local.categories||[])])];const categoryParents={...(cloud.categoryParents||{}),...(local.categoryParents||{})};const collapsedCategories={...(cloud.collapsedCategories||{}),...(local.collapsedCategories||{})};return {schemaVersion:5,categories:cats,categoryParents,collapsedCategories,prompts:dedupeExactPrompts([...map.values()]).map(p=>({...p,attachments:Array.isArray(p.attachments)?p.attachments:[]})),deletedPrompts:deleted,updatedAt:Math.max(local.updatedAt||0,cloud.updatedAt||0)};
+  const categoryUpdated={...(cloud.categoryUpdated||{})};Object.entries(local.categoryUpdated||{}).forEach(([k,v])=>categoryUpdated[k]=Math.max(categoryUpdated[k]||0,v||0));
+  const deletedCategories={...(cloud.deletedCategories||{})};Object.entries(local.deletedCategories||{}).forEach(([k,v])=>deletedCategories[k]=Math.max(deletedCategories[k]||0,v||0));
+  let cats=[...new Set([...(cloud.categories||[]),...(local.categories||[])])];
+  cats=cats.filter(cat=>(deletedCategories[cat]||0)<=(categoryUpdated[cat]||0));
+  const categoryParents={...(cloud.categoryParents||{}),...(local.categoryParents||{})};
+  Object.keys(categoryParents).forEach(child=>{const parent=categoryParents[child];if(!cats.includes(child)||!cats.includes(parent)||child===parent)delete categoryParents[child]});
+  const collapsedCategories={...(cloud.collapsedCategories||{}),...(local.collapsedCategories||{})};
+  Object.keys(collapsedCategories).forEach(cat=>{if(!cats.includes(cat))delete collapsedCategories[cat]});
+  return {schemaVersion:6,categories:cats,categoryParents,collapsedCategories,categoryUpdated,deletedCategories,prompts:dedupeExactPrompts([...map.values()]).map(p=>({...p,attachments:Array.isArray(p.attachments)?p.attachments:[]})),deletedPrompts:deleted,updatedAt:Math.max(local.updatedAt||0,cloud.updatedAt||0)};
 }
 function scheduleSync(){clearTimeout(syncTimer);syncTimer=setTimeout(()=>syncDrive(false),900)}
 async function syncDrive(interactive=false){
@@ -496,7 +513,7 @@ $('#search').oninput=render;$('#newPromptTop').onclick=()=>openPrompt();$('#mobi
 $('#driveSettings').onclick=openDriveSettings;$('#driveSignIn').onclick=()=>drive.connected?syncDrive(true):connectDrive();$('#syncNow').onclick=()=>syncDrive(true);$('#cancelDrive').onclick=()=>$('#driveModal').classList.remove('show');$('#saveDriveSettings').onclick=saveDriveSettings;$('#disconnectDrive').onclick=disconnectDrive;
 window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#search').focus()}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openPrompt()}});
 load();render();updateSyncUI();restoreDriveConnection();
-if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.4.1',{updateViaCache:'none'});await reg.update()}catch(e){}});
+if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.4.2',{updateViaCache:'none'});await reg.update()}catch(e){}});
 </script>
 </body>
 </html>

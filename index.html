@@ -84,6 +84,11 @@
       .search-form-grid .primary{width:100%}
     }
 </style>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Prompt Vault">
+<meta name="theme-color" content="#111827">
 </head>
 <body>
 <div class="app">
@@ -102,7 +107,7 @@
     <button id="excelBtn" class="side-btn">▦ Export to Excel</button>
     <button id="importBtn" class="side-btn">⇧ Import backup</button>
     <input type="file" id="importFile" accept="application/json" hidden />
-    <div class="mini">Prompt Vault v3.5.2 • Local-first. Google Drive sync is optional.</div>
+    <div class="mini">Prompt Vault v3.5.3 • Local-first. Google Drive sync is optional.</div>
   </aside>
 
   <main>
@@ -672,7 +677,7 @@ $('#newPromptTop').onclick=()=>openPrompt();$('#mobileAdd').onclick=()=>openProm
 $('#driveSettings').onclick=openDriveSettings;$('#driveSignIn').onclick=()=>drive.connected?syncDrive(true):connectDrive();$('#syncNow').onclick=()=>syncDrive(true);$('#cancelDrive').onclick=()=>$('#driveModal').classList.remove('show');$('#saveDriveSettings').onclick=saveDriveSettings;$('#disconnectDrive').onclick=disconnectDrive;
 window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();currentView='search';currentCategory=null;render()}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openPrompt()}});
 load();(async()=>{try{await migrateInlineAttachments()}catch(e){console.warn(e)}render();updateSyncUI();restoreDriveConnection()})();
-if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.5.2',{updateViaCache:'none'});await reg.update()}catch(e){}});
+if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js?v=3.5.3',{updateViaCache:'none'});await reg.update()}catch(e){}});
 </script>
 </body>
 </html>

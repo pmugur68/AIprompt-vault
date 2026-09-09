@@ -1,4 +1,4 @@
-const CACHE='prompt-vault-v3.5.3';
+const CACHE='prompt-vault-v3.5.4';
 const ASSETS=['./','./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./favicon-32.png'];
 
 self.addEventListener('install',event=>{
